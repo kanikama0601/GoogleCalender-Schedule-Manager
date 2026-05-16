@@ -1,0 +1,30 @@
+# IDE and System files
+.vscode/
+.idea/
+.DS_Store
+*.swp
+*.swo
+
+# Frontend (React/Vite)
+client/node_modules/
+client/dist/
+client/dist-ssr/
+client/*.local
+client/.eslintcache
+
+# Backend (Python/FastAPI)
+server/__pycache__/
+server/*.py[cod]
+server/*$py.class
+server/.venv/
+server/venv/
+server/ENV/
+server/.env
+server/.pytest_cache/
+
+# Google API Credentials (SECURITY!)
+server/credentials.json
+server/token.json
+
+# Docker
+.docker/
