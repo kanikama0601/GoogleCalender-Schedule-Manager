@@ -17,7 +17,7 @@ def get_calendar_events():
         
     return items
 
-def create_calendar_event(summary, description, start_time, end_time, is_all_day=False):
+def create_calendar_event(summary, description, start_time, end_time, is_all_day=False, recurrence=None):
     creds = get_credentials()
     if not creds:
         return None
@@ -28,6 +28,9 @@ def create_calendar_event(summary, description, start_time, end_time, is_all_day
         'summary': summary,
         'description': description,
     }
+    
+    if recurrence:
+        event['recurrence'] = recurrence
     
     if is_all_day:
         # For all-day events, use 'date' (YYYY-MM-DD)
@@ -45,7 +48,7 @@ def create_calendar_event(summary, description, start_time, end_time, is_all_day
     event = service.events().insert(calendarId='primary', body=event).execute()
     return event
 
-def update_calendar_event(event_id, summary, description, start_time, end_time, is_all_day=False):
+def update_calendar_event(event_id, summary, description, start_time, end_time, is_all_day=False, recurrence=None):
     creds = get_credentials()
     if not creds:
         return None
@@ -56,6 +59,9 @@ def update_calendar_event(event_id, summary, description, start_time, end_time, 
         'summary': summary,
         'description': description,
     }
+    
+    if recurrence:
+        event['recurrence'] = recurrence
     
     if is_all_day:
         # Google API end date is exclusive

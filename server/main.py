@@ -26,6 +26,7 @@ class Event(BaseModel):
     start_time: str
     end_time: str
     is_all_day: bool = False
+    recurrence: Optional[List[str]] = None
 
 @app.get("/auth/url")
 def auth_url(redirect_uri: str):
@@ -56,14 +57,14 @@ def list_events():
 
 @app.post("/events")
 def create_event(event: Event):
-    result = create_calendar_event(event.summary, event.description, event.start_time, event.end_time, event.is_all_day)
+    result = create_calendar_event(event.summary, event.description, event.start_time, event.end_time, event.is_all_day, event.recurrence)
     if result is None:
         raise HTTPException(status_code=401, detail="Not authenticated")
     return result
 
 @app.put("/events/{event_id}")
 def update_event(event_id: str, event: Event):
-    result = update_calendar_event(event_id, event.summary, event.description, event.start_time, event.end_time, event.is_all_day)
+    result = update_calendar_event(event_id, event.summary, event.description, event.start_time, event.end_time, event.is_all_day, event.recurrence)
     if result is None:
         raise HTTPException(status_code=401, detail="Not authenticated")
     return result

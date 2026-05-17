@@ -12,6 +12,19 @@ import dayjs, { Dayjs } from 'dayjs';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
+const getWeekdayJapanese = (day: string) => {
+  const map: { [key: string]: string } = {
+    'SU': '日曜日',
+    'MO': '月曜日',
+    'TU': '火曜日',
+    'WE': '水曜日',
+    'TH': '木曜日',
+    'FR': '金曜日',
+    'SA': '土曜日'
+  };
+  return map[day] || '';
+};
+
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [events, setEvents] = useState<any[]>([]);
@@ -29,6 +42,31 @@ function App() {
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingEventId, setEditingEventId] = useState<string | null>(null);
   const hasHandledCallback = useRef(false);
+
+  // Recurrence States
+  const [isRecurring, setIsRecurring] = useState(false);
+  const [recurrenceFreq, setRecurrenceFreq] = useState<'DAILY' | 'WEEKLY' | 'MONTHLY' | 'YEARLY'>('DAILY');
+  const [recurrenceEndType, setRecurrenceEndType] = useState<'NEVER' | 'COUNT' | 'UNTIL'>('NEVER');
+  const [recurrenceCount, setRecurrenceCount] = useState<number>(10);
+  const [recurrenceUntil, setRecurrenceUntil] = useState<Dayjs | null>(null);
+  
+  // Advanced Recurrence States
+  const [recurrenceWeekdays, setRecurrenceWeekdays] = useState<string[]>([]);
+  const [monthlyRepeatType, setMonthlyRepeatType] = useState<'DAY_OF_MONTH' | 'DAY_OF_WEEK'>('DAY_OF_MONTH');
+  const [recurrenceMonthday, setRecurrenceMonthday] = useState<number>(1);
+  const [recurrenceWeekNum, setRecurrenceWeekNum] = useState<number>(1);
+  const [recurrenceMonthlyWeekday, setRecurrenceMonthlyWeekday] = useState<string>('MO');
+
+  // Range Selection States
+  const [showRangeSelectionModal, setShowRangeSelectionModal] = useState(false);
+  const [rangeSelectionAction, setRangeSelectionAction] = useState<'EDIT' | 'DELETE' | null>(null);
+  const [recurringEventId, setRecurringEventId] = useState<string | null>(null);
+
+  const toggleWeekday = (day: string) => {
+    setRecurrenceWeekdays(prev => 
+      prev.includes(day) ? prev.filter(d => d !== day) : [...prev, day]
+    );
+  };
 
   useEffect(() => {
     checkAuthStatus();
@@ -102,7 +140,8 @@ function App() {
           borderColor: '#4285f4',
           extendedProps: {
             description: event.description,
-            isAllDay: event.isAllDay
+            isAllDay: event.isAllDay,
+            recurringEventId: event.recurringEventId
           }
         }));
         setEvents(formattedEvents);
@@ -112,14 +151,24 @@ function App() {
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (editingEventId && recurringEventId) {
+      setRangeSelectionAction('EDIT');
+      setShowRangeSelectionModal(true);
+    } else {
+      handleSave('ALL');
+    }
+  };
+
+  const handleSave = async (range: 'SINGLE' | 'ALL') => {
     if (!startDate || !endDate) return;
     
     setLoading(true);
     try {
-      const url = editingEventId ? `${API_URL}/events/${editingEventId}` : `${API_URL}/events`;
-      const method = editingEventId ? 'PUT' : 'POST';
+      const targetId = (range === 'ALL' && recurringEventId) ? recurringEventId : editingEventId;
+      const url = targetId ? `${API_URL}/events/${targetId}` : `${API_URL}/events`;
+      const method = targetId ? 'PUT' : 'POST';
 
       let finalStart: string;
       let finalEnd: string;
@@ -136,6 +185,39 @@ function App() {
         finalEnd = endFull.toISOString();
       }
 
+      let recurrence: string[] | null = null;
+      if (range === 'ALL' && isRecurring) {
+        let rrule = `RRULE:FREQ=${recurrenceFreq}`;
+        
+        // 毎週の詳細設定
+        if (recurrenceFreq === 'WEEKLY' && recurrenceWeekdays.length > 0) {
+          rrule += `;BYDAY=${recurrenceWeekdays.join(',')}`;
+        }
+        
+        // 毎月の詳細設定
+        if (recurrenceFreq === 'MONTHLY') {
+          if (monthlyRepeatType === 'DAY_OF_MONTH') {
+            rrule += `;BYMONTHDAY=${recurrenceMonthday}`;
+          } else if (monthlyRepeatType === 'DAY_OF_WEEK') {
+            rrule += `;BYDAY=${recurrenceWeekNum}${recurrenceMonthlyWeekday}`;
+          }
+        }
+
+        if (recurrenceEndType === 'COUNT') {
+          rrule += `;COUNT=${recurrenceCount}`;
+        } else if (recurrenceEndType === 'UNTIL' && recurrenceUntil) {
+          if (isAllDay) {
+            rrule += `;UNTIL=${recurrenceUntil.format('YYYYMMDD')}`;
+          } else {
+            const localEndOfDay = recurrenceUntil.hour(23).minute(59).second(59).millisecond(0);
+            const isoString = localEndOfDay.toISOString();
+            const utcFormatted = isoString.replace(/[-:]/g, '').split('.')[0] + 'Z';
+            rrule += `;UNTIL=${utcFormatted}`;
+          }
+        }
+        recurrence = [rrule];
+      }
+
       const res = await fetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
@@ -144,7 +226,8 @@ function App() {
           description,
           start_time: finalStart,
           end_time: finalEnd,
-          is_all_day: isAllDay
+          is_all_day: isAllDay,
+          recurrence
         }),
       });
       if (res.ok) {
@@ -158,15 +241,29 @@ function App() {
       console.error('Failed to save event', err);
     } finally {
       setLoading(false);
+      setShowRangeSelectionModal(false);
+      setRangeSelectionAction(null);
     }
   };
 
-  const handleDelete = async () => {
-    if (!editingEventId || !window.confirm('Are you sure you want to delete this event?')) return;
+  const handleDeleteClick = () => {
+    if (recurringEventId) {
+      setRangeSelectionAction('DELETE');
+      setShowRangeSelectionModal(true);
+    } else {
+      handleDelete('ALL');
+    }
+  };
+
+  const handleDelete = async (range: 'SINGLE' | 'ALL') => {
+    if (!editingEventId) return;
+    
+    if (!recurringEventId && !window.confirm('Are you sure you want to delete this event?')) return;
     
     setLoading(true);
     try {
-      const res = await fetch(`${API_URL}/events/${editingEventId}`, {
+      const targetId = (range === 'ALL' && recurringEventId) ? recurringEventId : editingEventId;
+      const res = await fetch(`${API_URL}/events/${targetId}`, {
         method: 'DELETE',
       });
       if (res.ok) {
@@ -180,6 +277,8 @@ function App() {
       console.error('Failed to delete event', err);
     } finally {
       setLoading(false);
+      setShowRangeSelectionModal(false);
+      setRangeSelectionAction(null);
     }
   };
 
@@ -201,6 +300,23 @@ function App() {
     setIsAllDay(false);
     setEditingEventId(null);
     setIsFormOpen(false);
+    
+    // Reset recurrence states
+    setIsRecurring(false);
+    setRecurrenceFreq('DAILY');
+    setRecurrenceEndType('NEVER');
+    setRecurrenceCount(10);
+    setRecurrenceUntil(null);
+    setRecurrenceWeekdays([]);
+    setMonthlyRepeatType('DAY_OF_MONTH');
+    setRecurrenceMonthday(1);
+    setRecurrenceWeekNum(1);
+    setRecurrenceMonthlyWeekday('MO');
+
+    // Reset range selection states
+    setShowRangeSelectionModal(false);
+    setRangeSelectionAction(null);
+    setRecurringEventId(null);
   };
 
   const handleDateSelect = (selectInfo: any) => {
@@ -215,6 +331,14 @@ function App() {
     setStartDate(start);
     setEndDate(end);
     setIsAllDay(selectInfo.allDay);
+    
+    // Set smart defaults for recurrence based on selected start date
+    const dayOfWeekMap = ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA'];
+    const weekdayStr = dayOfWeekMap[start.day()];
+    setRecurrenceMonthlyWeekday(weekdayStr);
+    setRecurrenceWeekdays([weekdayStr]);
+    setRecurrenceMonthday(start.date());
+    setRecurrenceWeekNum(Math.ceil(start.date() / 7));
     
     if (!selectInfo.allDay) {
       setStartTime(start);
@@ -244,6 +368,16 @@ function App() {
     setStartTime(start);
     setEndDate(end);
     setEndTime(end);
+    
+    // Set smart defaults for recurrence based on clicked event start date
+    const dayOfWeekMap = ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA'];
+    const weekdayStr = dayOfWeekMap[start.day()];
+    setRecurrenceMonthlyWeekday(weekdayStr);
+    setRecurrenceWeekdays([weekdayStr]);
+    setRecurrenceMonthday(start.date());
+    setRecurrenceWeekNum(Math.ceil(start.date() / 7));
+
+    setRecurringEventId(event.extendedProps.recurringEventId || null);
     
     setIsFormOpen(true);
   };
@@ -314,16 +448,185 @@ function App() {
                   autoFocus
                 />
                 
-                <div className="form-group all-day-toggle">
-                  <label>
-                    <input 
-                      type="checkbox" 
-                      checked={isAllDay} 
-                      onChange={e => handleAllDayToggle(e.target.checked)} 
-                    />
-                    All day
-                  </label>
-                </div>
+                 <div className="form-group all-day-toggle">
+                   <label>
+                     <input 
+                       type="checkbox" 
+                       checked={isAllDay} 
+                       onChange={e => handleAllDayToggle(e.target.checked)} 
+                     />
+                     All day
+                   </label>
+                 </div>
+
+                 <div className="form-group repeat-toggle">
+                   <label>
+                     <input 
+                       type="checkbox" 
+                       checked={isRecurring} 
+                       onChange={e => setIsRecurring(e.target.checked)} 
+                     />
+                     Repeat (繰り返し)
+                   </label>
+                 </div>
+
+                 {isRecurring && (
+                    <div className="recurrence-settings">
+                      <div className="form-group">
+                        <label>Frequency (頻度)</label>
+                        <select 
+                          value={recurrenceFreq} 
+                          onChange={e => setRecurrenceFreq(e.target.value as any)}
+                          className="select-input"
+                        >
+                          <option value="DAILY">Daily (毎日)</option>
+                          <option value="WEEKLY">Weekly (毎週)</option>
+                          <option value="MONTHLY">Monthly (毎月)</option>
+                          <option value="YEARLY">Yearly (毎年)</option>
+                        </select>
+                      </div>
+
+                      {/* Weekly details */}
+                      {recurrenceFreq === 'WEEKLY' && (
+                        <div className="form-group">
+                          <label>Repeat on (繰り返す曜日)</label>
+                          <div className="weekday-selector">
+                            {['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA'].map(day => {
+                              const labelMap: { [key: string]: string } = {
+                                'SU': '日', 'MO': '月', 'TU': '火', 'WE': '水',
+                                'TH': '木', 'FR': '金', 'SA': '土'
+                              };
+                              const isSelected = recurrenceWeekdays.includes(day);
+                              return (
+                                <button
+                                  key={day}
+                                  type="button"
+                                  className={`weekday-btn ${isSelected ? 'selected' : ''}`}
+                                  onClick={() => toggleWeekday(day)}
+                                >
+                                  {labelMap[day]}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Monthly details */}
+                      {recurrenceFreq === 'MONTHLY' && (
+                        <div className="monthly-recurrence-options">
+                          <div className="form-group">
+                            <label>Repeat pattern (繰り返しの形式)</label>
+                            <div className="radio-group">
+                              <label className="radio-label">
+                                <input 
+                                  type="radio" 
+                                  name="monthlyRepeatType" 
+                                  checked={monthlyRepeatType === 'DAY_OF_MONTH'} 
+                                  onChange={() => setMonthlyRepeatType('DAY_OF_MONTH')} 
+                                />
+                                毎月 {recurrenceMonthday} 日
+                              </label>
+                              <label className="radio-label">
+                                <input 
+                                  type="radio" 
+                                  name="monthlyRepeatType" 
+                                  checked={monthlyRepeatType === 'DAY_OF_WEEK'} 
+                                  onChange={() => setMonthlyRepeatType('DAY_OF_WEEK')} 
+                                />
+                                第{recurrenceWeekNum === -1 ? '最終' : recurrenceWeekNum} {getWeekdayJapanese(recurrenceMonthlyWeekday)}
+                              </label>
+                            </div>
+                          </div>
+
+                          {monthlyRepeatType === 'DAY_OF_MONTH' ? (
+                            <div className="form-group sub-settings">
+                              <label>Day of Month (日付を指定: 1〜31日)</label>
+                              <input 
+                                type="number" 
+                                min={1} 
+                                max={31}
+                                value={recurrenceMonthday} 
+                                onChange={e => setRecurrenceMonthday(Math.max(1, Math.min(31, parseInt(e.target.value) || 1)))}
+                                className="number-input"
+                              />
+                            </div>
+                          ) : (
+                            <div className="form-group sub-settings d-flex gap-2">
+                              <div className="flex-1">
+                                <label>Week Number (第何週)</label>
+                                <select 
+                                  value={recurrenceWeekNum} 
+                                  onChange={e => setRecurrenceWeekNum(parseInt(e.target.value))}
+                                  className="select-input"
+                                >
+                                  <option value={1}>第 1</option>
+                                  <option value={2}>第 2</option>
+                                  <option value={3}>第 3</option>
+                                  <option value={4}>第 4</option>
+                                  <option value={5}>第 5</option>
+                                  <option value={-1}>最終</option>
+                                </select>
+                              </div>
+                              <div className="flex-1">
+                                <label>Day of Week (曜日)</label>
+                                <select 
+                                  value={recurrenceMonthlyWeekday} 
+                                  onChange={e => setRecurrenceMonthlyWeekday(e.target.value)}
+                                  className="select-input"
+                                >
+                                  <option value="SU">日曜日</option>
+                                  <option value="MO">月曜日</option>
+                                  <option value="TU">火曜日</option>
+                                  <option value="WE">水曜日</option>
+                                  <option value="TH">木曜日</option>
+                                  <option value="FR">金曜日</option>
+                                  <option value="SA">土曜日</option>
+                                </select>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      <div className="form-group">
+                        <label>Ends (終了条件)</label>
+                        <select 
+                          value={recurrenceEndType} 
+                          onChange={e => setRecurrenceEndType(e.target.value as any)}
+                          className="select-input"
+                        >
+                          <option value="NEVER">Never (終了しない)</option>
+                          <option value="COUNT">After occurrences (指定回数で終了)</option>
+                          <option value="UNTIL">On date (指定日で終了)</option>
+                        </select>
+                      </div>
+
+                      {recurrenceEndType === 'COUNT' && (
+                        <div className="form-group">
+                          <label>Occurrences (終了回数)</label>
+                          <input 
+                            type="number" 
+                            min={1} 
+                            value={recurrenceCount} 
+                            onChange={e => setRecurrenceCount(parseInt(e.target.value) || 1)}
+                            className="number-input"
+                          />
+                        </div>
+                      )}
+
+                      {recurrenceEndType === 'UNTIL' && (
+                        <div className="form-group">
+                          <label>End Date (終了日)</label>
+                          <DatePicker 
+                            value={recurrenceUntil} 
+                            onChange={(newValue) => setRecurrenceUntil(newValue)}
+                            slotProps={{ textField: { size: 'small', fullWidth: true } }}
+                          />
+                        </div>
+                      )}
+                    </div>
+                 )}
 
                 <div className="form-group">
                   <label>Start</label>
@@ -369,7 +672,7 @@ function App() {
                 />
                 <div className="modal-footer">
                   {editingEventId && (
-                    <button type="button" className="delete-btn" onClick={handleDelete} disabled={loading}>
+                    <button type="button" className="delete-btn" onClick={handleDeleteClick} disabled={loading}>
                       Delete
                     </button>
                   )}
@@ -381,6 +684,43 @@ function App() {
                   </div>
                 </div>
               </form>
+            </div>
+          </div>
+        )}
+
+        {showRangeSelectionModal && (
+          <div className="modal-overlay range-modal-overlay">
+            <div className="range-modal">
+              <h4>{rangeSelectionAction === 'DELETE' ? '予定の削除' : '予定の変更'}</h4>
+              <p>
+                この予定は繰り返し予定の一部です。<br />
+                どちらの予定を{rangeSelectionAction === 'DELETE' ? '削除' : '変更'}しますか？
+              </p>
+              <div className="range-options">
+                <button 
+                  type="button" 
+                  className="range-btn btn-secondary" 
+                  onClick={() => rangeSelectionAction === 'DELETE' ? handleDelete('SINGLE') : handleSave('SINGLE')}
+                >
+                  この予定のみ (This event only)
+                </button>
+                <button 
+                  type="button" 
+                  className="range-btn btn-primary" 
+                  onClick={() => rangeSelectionAction === 'DELETE' ? handleDelete('ALL') : handleSave('ALL')}
+                >
+                  今後すべての予定 (This and following / Series)
+                </button>
+              </div>
+              <div className="range-footer">
+                <button 
+                  type="button" 
+                  className="cancel-btn" 
+                  onClick={() => { setShowRangeSelectionModal(false); setRangeSelectionAction(null); }}
+                >
+                  キャンセル
+                </button>
+              </div>
             </div>
           </div>
         )}
