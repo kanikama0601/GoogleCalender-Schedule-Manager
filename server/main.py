@@ -1,10 +1,14 @@
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional
-import os
 from auth import get_auth_url, save_token_from_code, get_credentials
-from calendar_service import get_calendar_events, create_calendar_event
+from calendar_service import get_calendar_events, create_calendar_event, update_calendar_event, delete_calendar_event
 
 app = FastAPI()
 
@@ -21,6 +25,7 @@ class Event(BaseModel):
     description: Optional[str] = None
     start_time: str
     end_time: str
+    is_all_day: bool = False
 
 @app.get("/auth/url")
 def auth_url(redirect_uri: str):
@@ -51,10 +56,24 @@ def list_events():
 
 @app.post("/events")
 def create_event(event: Event):
-    result = create_calendar_event(event.summary, event.description, event.start_time, event.end_time)
+    result = create_calendar_event(event.summary, event.description, event.start_time, event.end_time, event.is_all_day)
     if result is None:
         raise HTTPException(status_code=401, detail="Not authenticated")
     return result
+
+@app.put("/events/{event_id}")
+def update_event(event_id: str, event: Event):
+    result = update_calendar_event(event_id, event.summary, event.description, event.start_time, event.end_time, event.is_all_day)
+    if result is None:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    return result
+
+@app.delete("/events/{event_id}")
+def delete_event(event_id: str):
+    result = delete_calendar_event(event_id)
+    if result is None:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    return {"status": "success"}
 
 if __name__ == "__main__":
     import uvicorn

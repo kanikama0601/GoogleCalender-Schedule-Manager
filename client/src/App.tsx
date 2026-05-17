@@ -5,6 +5,11 @@ import timeGridPlugin from '@fullcalendar/timegrid';
 import interactionPlugin from '@fullcalendar/interaction';
 import './App.css';
 
+// MUI Imports
+import { LocalizationProvider, DatePicker, MobileTimePicker } from '@mui/x-date-pickers';
+import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
+import dayjs, { Dayjs } from 'dayjs';
+
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
 function App() {
@@ -12,10 +17,17 @@ function App() {
   const [events, setEvents] = useState<any[]>([]);
   const [summary, setSummary] = useState('');
   const [description, setDescription] = useState('');
-  const [startTime, setStartTime] = useState('');
-  const [endTime, setEndTime] = useState('');
+  
+  // Use dayjs for state to work with MUI
+  const [startDate, setStartDate] = useState<Dayjs | null>(null);
+  const [startTime, setStartTime] = useState<Dayjs | null>(null);
+  const [endDate, setEndDate] = useState<Dayjs | null>(null);
+  const [endTime, setEndTime] = useState<Dayjs | null>(null);
+  
+  const [isAllDay, setIsAllDay] = useState(false);
   const [loading, setLoading] = useState(false);
   const [isFormOpen, setIsFormOpen] = useState(false);
+  const [editingEventId, setEditingEventId] = useState<string | null>(null);
   const hasHandledCallback = useRef(false);
 
   useEffect(() => {
@@ -84,9 +96,14 @@ function App() {
           title: event.summary,
           start: event.start.dateTime || event.start.date,
           end: event.end.dateTime || event.end.date,
+          allDay: event.isAllDay,
           description: event.description,
           backgroundColor: '#4285f4',
-          borderColor: '#4285f4'
+          borderColor: '#4285f4',
+          extendedProps: {
+            description: event.description,
+            isAllDay: event.isAllDay
+          }
         }));
         setEvents(formattedEvents);
       }
@@ -97,39 +114,137 @@ function App() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!startDate || !endDate) return;
+    
     setLoading(true);
     try {
-      const res = await fetch(`${API_URL}/events`, {
-        method: 'POST',
+      const url = editingEventId ? `${API_URL}/events/${editingEventId}` : `${API_URL}/events`;
+      const method = editingEventId ? 'PUT' : 'POST';
+
+      let finalStart: string;
+      let finalEnd: string;
+
+      if (isAllDay) {
+        finalStart = startDate.format('YYYY-MM-DD');
+        finalEnd = endDate.format('YYYY-MM-DD');
+      } else {
+        if (!startTime || !endTime) return;
+        // Combine date and time
+        const startFull = startDate.hour(startTime.hour()).minute(startTime.minute());
+        const endFull = endDate.hour(endTime.hour()).minute(endTime.minute());
+        finalStart = startFull.toISOString();
+        finalEnd = endFull.toISOString();
+      }
+
+      const res = await fetch(url, {
+        method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           summary,
           description,
-          start_time: new Date(startTime).toISOString(),
-          end_time: new Date(endTime).toISOString(),
+          start_time: finalStart,
+          end_time: finalEnd,
+          is_all_day: isAllDay
         }),
       });
       if (res.ok) {
-        setSummary('');
-        setDescription('');
-        setStartTime('');
-        setEndTime('');
-        setIsFormOpen(false);
+        resetForm();
         fetchEvents();
       } else {
         const data = await res.json();
-        alert(data.detail || 'Failed to add event');
+        alert(data.detail || 'Failed to save event');
       }
     } catch (err) {
-      console.error('Failed to create event', err);
+      console.error('Failed to save event', err);
     } finally {
       setLoading(false);
     }
   };
 
+  const handleDelete = async () => {
+    if (!editingEventId || !window.confirm('Are you sure you want to delete this event?')) return;
+    
+    setLoading(true);
+    try {
+      const res = await fetch(`${API_URL}/events/${editingEventId}`, {
+        method: 'DELETE',
+      });
+      if (res.ok) {
+        resetForm();
+        fetchEvents();
+      } else {
+        const data = await res.json();
+        alert(data.detail || 'Failed to delete event');
+      }
+    } catch (err) {
+      console.error('Failed to delete event', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleAllDayToggle = (checked: boolean) => {
+    setIsAllDay(checked);
+    if (!checked && !startTime) {
+      setStartTime(dayjs().hour(9).minute(0));
+      setEndTime(dayjs().hour(10).minute(0));
+    }
+  };
+
+  const resetForm = () => {
+    setSummary('');
+    setDescription('');
+    setStartDate(null);
+    setStartTime(null);
+    setEndDate(null);
+    setEndTime(null);
+    setIsAllDay(false);
+    setEditingEventId(null);
+    setIsFormOpen(false);
+  };
+
   const handleDateSelect = (selectInfo: any) => {
-    setStartTime(selectInfo.startStr.slice(0, 16));
-    setEndTime(selectInfo.endStr.slice(0, 16));
+    resetForm();
+    const start = dayjs(selectInfo.start);
+    let end = dayjs(selectInfo.end);
+    
+    if (selectInfo.allDay) {
+      end = end.subtract(1, 'day');
+    }
+    
+    setStartDate(start);
+    setEndDate(end);
+    setIsAllDay(selectInfo.allDay);
+    
+    if (!selectInfo.allDay) {
+      setStartTime(start);
+      setEndTime(end);
+    } else {
+      setStartTime(dayjs().hour(9).minute(0));
+      setEndTime(dayjs().hour(10).minute(0));
+    }
+    setIsFormOpen(true);
+  };
+
+  const handleEventClick = (clickInfo: any) => {
+    const event = clickInfo.event;
+    setEditingEventId(event.id);
+    setSummary(event.title);
+    setDescription(event.extendedProps.description || '');
+    setIsAllDay(event.allDay);
+    
+    const start = dayjs(event.start);
+    let end = dayjs(event.end);
+    
+    if (event.allDay && event.end) {
+      end = end.subtract(1, 'day');
+    }
+    
+    setStartDate(start);
+    setStartTime(start);
+    setEndDate(end);
+    setEndTime(end);
+    
     setIsFormOpen(true);
   };
 
@@ -147,80 +262,130 @@ function App() {
   }
 
   return (
-    <div className="app-layout">
-      <header className="app-header">
-        <div className="header-left">
-          <img src="https://www.gstatic.com/images/branding/product/1x/calendar_2020q4_32dp.png" alt="logo" />
-          <span className="brand-name">Calendar</span>
-        </div>
-        <div className="header-right">
-          <button className="create-btn" onClick={() => setIsFormOpen(true)}>
-            <span className="plus-icon">+</span> Create
-          </button>
-        </div>
-      </header>
-
-      <main className="main-content">
-        <div className="calendar-container">
-          <FullCalendar
-            plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
-            initialView="dayGridMonth"
-            headerToolbar={{
-              left: 'prev,next today',
-              center: 'title',
-              right: 'dayGridMonth,timeGridWeek,timeGridDay'
-            }}
-            events={events}
-            selectable={true}
-            selectMirror={true}
-            dayMaxEvents={true}
-            select={handleDateSelect}
-            height="100%"
-          />
-        </div>
-      </main>
-
-      {isFormOpen && (
-        <div className="modal-overlay">
-          <div className="event-modal">
-            <div className="modal-header">
-              <h3>New Event</h3>
-              <button className="close-btn" onClick={() => setIsFormOpen(false)}>×</button>
-            </div>
-            <form onSubmit={handleSubmit}>
-              <input 
-                className="input-title"
-                placeholder="Add title"
-                value={summary}
-                onChange={e => setSummary(e.target.value)}
-                required
-                autoFocus
-              />
-              <div className="form-group">
-                <label>Start</label>
-                <input type="datetime-local" value={startTime} onChange={e => setStartTime(e.target.value)} required />
-              </div>
-              <div className="form-group">
-                <label>End</label>
-                <input type="datetime-local" value={endTime} onChange={e => setEndTime(e.target.value)} required />
-              </div>
-              <textarea 
-                className="input-desc"
-                placeholder="Add description"
-                value={description}
-                onChange={e => setDescription(e.target.value)}
-              />
-              <div className="modal-footer">
-                <button type="button" className="cancel-btn" onClick={() => setIsFormOpen(false)}>Cancel</button>
-                <button type="submit" className="save-btn" disabled={loading}>
-                  {loading ? 'Saving...' : 'Save'}
-                </button>
-              </div>
-            </form>
+    <LocalizationProvider dateAdapter={AdapterDayjs}>
+      <div className="app-layout">
+        <header className="app-header">
+          <div className="header-left">
+            <img src="https://www.gstatic.com/images/branding/product/1x/calendar_2020q4_32dp.png" alt="logo" />
+            <span className="brand-name">Calendar</span>
           </div>
-        </div>
-      )}
-    </div>
+          <div className="header-right">
+            <button className="create-btn" onClick={() => { resetForm(); setIsFormOpen(true); }}>
+              <span className="plus-icon">+</span> Create
+            </button>
+          </div>
+        </header>
+
+        <main className="main-content">
+          <div className="calendar-container">
+            <FullCalendar
+              plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
+              initialView="dayGridMonth"
+              headerToolbar={{
+                left: 'prev,next today',
+                center: 'title',
+                right: 'dayGridMonth,timeGridWeek,timeGridDay'
+              }}
+              events={events}
+              selectable={true}
+              selectMirror={true}
+              dayMaxEvents={true}
+              select={handleDateSelect}
+              eventClick={handleEventClick}
+              height="100%"
+            />
+          </div>
+        </main>
+
+        {isFormOpen && (
+          <div className="modal-overlay">
+            <div className="event-modal">
+              <div className="modal-header">
+                <h3>{editingEventId ? 'Edit Event' : 'New Event'}</h3>
+                <button className="close-btn" onClick={resetForm}>×</button>
+              </div>
+              <form onSubmit={handleSubmit}>
+                <input 
+                  className="input-title"
+                  placeholder="Add title"
+                  value={summary}
+                  onChange={e => setSummary(e.target.value)}
+                  required
+                  autoFocus
+                />
+                
+                <div className="form-group all-day-toggle">
+                  <label>
+                    <input 
+                      type="checkbox" 
+                      checked={isAllDay} 
+                      onChange={e => handleAllDayToggle(e.target.checked)} 
+                    />
+                    All day
+                  </label>
+                </div>
+
+                <div className="form-group">
+                  <label>Start</label>
+                  <div className="datetime-inputs">
+                    <DatePicker 
+                      value={startDate} 
+                      onChange={(newValue) => setStartDate(newValue)}
+                      slotProps={{ textField: { size: 'small', fullWidth: true } }}
+                    />
+                    {!isAllDay && (
+                      <MobileTimePicker 
+                        value={startTime} 
+                        onChange={(newValue) => setStartTime(newValue)}
+                        slotProps={{ textField: { size: 'small', fullWidth: true } }}
+                        ampm={false}
+                      />
+                    )}
+                  </div>
+                </div>
+                <div className="form-group">
+                  <label>End</label>
+                  <div className="datetime-inputs">
+                    <DatePicker 
+                      value={endDate} 
+                      onChange={(newValue) => setEndDate(newValue)}
+                      slotProps={{ textField: { size: 'small', fullWidth: true } }}
+                    />
+                    {!isAllDay && (
+                      <MobileTimePicker 
+                        value={endTime} 
+                        onChange={(newValue) => setEndTime(newValue)}
+                        slotProps={{ textField: { size: 'small', fullWidth: true } }}
+                        ampm={false}
+                      />
+                    )}
+                  </div>
+                </div>
+                <textarea 
+                  className="input-desc"
+                  placeholder="Add description"
+                  value={description}
+                  onChange={e => setDescription(e.target.value)}
+                />
+                <div className="modal-footer">
+                  {editingEventId && (
+                    <button type="button" className="delete-btn" onClick={handleDelete} disabled={loading}>
+                      Delete
+                    </button>
+                  )}
+                  <div className="footer-right">
+                    <button type="button" className="cancel-btn" onClick={resetForm}>Cancel</button>
+                    <button type="submit" className="save-btn" disabled={loading}>
+                      {loading ? 'Saving...' : (editingEventId ? 'Update' : 'Save')}
+                    </button>
+                  </div>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+      </div>
+    </LocalizationProvider>
   );
 }
 
