@@ -1,30 +1,90 @@
 # Google Calendar Shared Manager
 
-This application allows multiple users to add events to a single shared Google Calendar.
+複数ユーザーで1つの共有Googleカレンダーに対して、直感的に予定の追加・編集・複製・繰り返し登録を行うことができるモダンなWebアプリケーションです。
 
-## Prerequisites
-- Docker and Docker Compose
-- Google Cloud Project with Google Calendar API enabled
-- OAuth 2.0 Client ID (Web Application) credentials
+---
 
-## Setup
-1. Go to the [Google Cloud Console](https://console.cloud.google.com/).
-2. Create a project and enable the **Google Calendar API**.
-3. Configure the **OAuth consent screen** (External).
-4. Create **OAuth 2.0 Client IDs** for a "Web application".
-   - Authorized redirect URIs: `http://localhost:5173` (or your production URL)
-5. Download the JSON credentials, rename the file to `credentials.json`, and place it in the `server/` directory.
+## 🚀 起動方法 (How to Run)
 
-## How to Run
-1. Start the application using Docker Compose:
-   ```bash
-   docker-compose up --build
-   ```
-2. Open `http://localhost:5173` in your browser.
-3. Click "Authorize with Google" to link the shared account. This only needs to be done once (or when the token expires).
-4. Once authorized, any user can add events to the calendar via the web interface.
+本プロジェクトは Docker または Podman を使用して、フロントエンド（React）とバックエンド（FastAPI）をコンテナとして同時に起動できます。
 
-## Project Structure
-- `client/`: React + Vite frontend.
-- `server/`: FastAPI backend.
-- `docker-compose.yml`: Orchastrates both services.
+### 1. 前提条件 (Prerequisites)
+* **コンテナ環境**: Docker & Docker Compose、または **Podman & Podman-compose** がインストールされていること。
+* **Google API 資格情報**: Google Calendar API が有効化された Google Cloud プロジェクトの OAuth 2.0 クライアント ID（ウェブ アプリケーション）資格情報。
+
+### 2. 初期セットアップ (Credentials Setup)
+1. [Google Cloud Console](https://console.cloud.google.com/) にアクセスします。
+2. プロジェクトを作成し、**Google Calendar API** を有効化します。
+3. **OAuth 同意画面**（外部 / External）を設定します。
+4. **OAuth 2.0 クライアント ID** を「ウェブ アプリケーション」として作成します。
+   * 承認されたリダイレクト URI: `http://localhost:5173` （またはデプロイ先のURL）
+5. ダウンロードした JSON 鍵ファイルを `credentials.json` にリネームし、`server/` ディレクトリの直下に配置します。
+
+### 3. コンテナの起動
+プロジェクトのルートディレクトリで以下のコマンドを実行します。
+
+#### Docker を使用する場合:
+```bash
+docker-compose up --build
+```
+
+#### Podman を使用する場合:
+```bash
+podman-compose up --build
+```
+
+### 4. アプリケーションへのアクセス
+1. ブラウザで `http://localhost:5173` を開きます。
+2. 画面中央の **「Authorize with Google」** ボタンをクリックし、共有するGoogleアカウントで一度だけ認証・連携を完了させます（トークンが生成されます）。
+3. 認証が完了すると、どのユーザーからでもWeb UIを通じてシームレスにGoogleカレンダーに予定を書き込めるようになります。
+
+---
+
+## ✨ 機能紹介 (Features)
+
+モダンで快適な操作性を追求し、数多くの高度なスケジュール管理機能を搭載しています。
+
+### 🎨 白と青を基調とした洗練されたプレミアムUI
+* **Interフォントの採用**と、滑らかなアニメーション、奥行きのあるシャドウ。
+* **24時間制表示 (`HH:mm`) に完全統一**され、日本のビジネスシーンや日常使いに最適な直感的なタイムスロット表示。
+* 画面からはみ出さないよう、フォーム内部の縦スクロールとヘッダー・フッターを完全に固定した、ストレスフリーなモーダルデザイン。
+
+### 📅 直感的なドラッグ＆ドロップ移動
+* カレンダー上の予定をマウスでドラッグして別の日付へスライド移動可能。
+* **時間は元の設定を1分も崩さずに完全キープ**し、日付部分だけをピンポイントで書き換えます。
+
+### 🔄 高度な繰り返し予定 (Recurrence Rule / RRULE)
+* **多彩な頻度設定**: 毎日・毎週・毎月・毎年での柔軟な自動繰り返し登録に対応。
+* **曜日や日付の細かい指定**: 「毎週水曜日と金曜日」「毎月3日」「第2火曜日」といった細かな指定ルールをフロントエンドで簡単に設定可能。
+* **スマートデフォルト**: カレンダー上で選択した初期日付から「第何週」「何曜日」かを自動算出するアシスト機能を搭載。
+
+### 🛡️ 繰り返し予定のスマートな個別（例外）制御
+* **ドラッグ移動時の自動例外化**: 繰り返し予定の一部をドラッグ＆ドロップすると、その特定の日（インスタンス）だけを自動で切り離して移動させ、他のシリーズ予定には一切影響を及ぼしません。
+* **変更・削除範囲のダイアログ**: 編集や削除を行う際、「この予定のみを変更/削除」するか「今後すべての予定を変更/削除」するかを明確に選択できます。
+
+### 📑 予定のスマート複製（コピー）機能
+* 既存の予定を開いた際に、フッター左側に設置された**用紙が重なったコピーロゴ（アイコン）**をクリックするだけで、すべての入力内容（タイトル、説明、日付、繰り返し設定など）を引き継いだまま、新規作成モード（新規ID）へ瞬時に切り替わります。
+* ごちゃごちゃした文字表示を排したミニマルでモダンなデザインを採用。
+
+### 🔐 Google OAuth 2.0 連携
+* Google Calendar API との堅牢な OAuth 2.0 連携により、サーバーサイドでセキュアにトークンを自動管理し、共有カレンダーへの確実なデータ連携を行います。
+
+---
+
+## 📁 プロジェクト構成 (Project Structure)
+
+```text
+├── client/                 # フロントエンド (React + Vite + TypeScript)
+│   ├── src/
+│   │   ├── App.tsx         # カレンダーロジック・各種イベント制御・パースロジック
+│   │   ├── App.css         # 「白と青」のモダンデザインシステム、ピクセルパーフェクトな配置定義
+│   │   └── main.tsx
+│   └── index.html          # SEO対策・Web Fonts読み込み
+│
+├── server/                 # バックエンド (FastAPI + Python)
+│   ├── main.py             # APIエンドポイントのルーティング
+│   ├── calendar_service.py # Google Calendar APIとの通信・イベント生成/更新/削除ロジック
+│   └── credentials.json    # Google OAuth クライアント認証キー (各自配置)
+│
+└── docker-compose.yml      # フロント・バックを一括起動するコンテナオーケストレーション
+```
