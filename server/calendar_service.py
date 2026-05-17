@@ -8,7 +8,7 @@ def get_calendar_events():
         return None
     
     service = build('calendar', 'v3', credentials=creds)
-    events_result = service.events().list(calendarId='primary', maxResults=50, singleEvents=True, orderBy='startTime').execute()
+    events_result = service.events().list(calendarId='tinlab.share@gmail.com', maxResults=50, singleEvents=True, orderBy='startTime').execute()
     items = events_result.get('items', [])
     
     # Add a flag to indicate if it's an all-day event

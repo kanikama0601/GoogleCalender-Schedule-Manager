@@ -23,8 +23,7 @@ server/.env
 server/.pytest_cache/
 
 # Google API Credentials (SECURITY!)
-server/data/credentials.json
-server/data/token.json
+server/data/service_account_key.json
 
 # Docker
 .docker/
