@@ -7,7 +7,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional
-from auth import get_auth_url, save_token_from_code, get_credentials
+from auth import get_auth_url, save_token_from_code, get_credentials, CLIENT_SECRETS_FILE
 from calendar_service import get_calendar_events, create_calendar_event, update_calendar_event, delete_calendar_event
 
 app = FastAPI()
@@ -30,8 +30,8 @@ class Event(BaseModel):
 
 @app.get("/auth/url")
 def auth_url(redirect_uri: str):
-    if not os.path.exists('credentials.json'):
-        raise HTTPException(status_code=400, detail="credentials.json not found. Please provide it in the server directory.")
+    if not os.path.exists(CLIENT_SECRETS_FILE):
+        raise HTTPException(status_code=400, detail="credentials.json not found. Please provide it in the server/data directory.")
     url, code_verifier = get_auth_url(redirect_uri)
     return {"url": url, "code_verifier": code_verifier}
 

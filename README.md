@@ -18,7 +18,7 @@
 3. **OAuth 同意画面**（外部 / External）を設定します。
 4. **OAuth 2.0 クライアント ID** を「ウェブ アプリケーション」として作成します。
    * 承認されたリダイレクト URI: `http://localhost:5173` （またはデプロイ先のURL）
-5. ダウンロードした JSON 鍵ファイルを `credentials.json` にリネームし、`server/` ディレクトリの直下に配置します。
+5. ダウンロードした JSON 鍵ファイルを `credentials.json` にリネームし、`server/data/` ディレクトリの直下に配置します。
 
 ### 3. コンテナの起動
 プロジェクトのルートディレクトリで以下のコマンドを実行します。
@@ -84,7 +84,9 @@ podman-compose up --build
 ├── server/                 # バックエンド (FastAPI + Python)
 │   ├── main.py             # APIエンドポイントのルーティング
 │   ├── calendar_service.py # Google Calendar APIとの通信・イベント生成/更新/削除ロジック
-│   └── credentials.json    # Google OAuth クライアント認証キー (各自配置)
+│   └── data/               # 認証データフォルダ (自動的に作成されます)
+│       ├── credentials.json # Google OAuth クライアント認証キー (各自配置)
+│       └── token.json      # Google OAuth トークンファイル (ログイン時に自動生成)
 │
 └── docker-compose.yml      # フロント・バックを一括起動するコンテナオーケストレーション
 ```

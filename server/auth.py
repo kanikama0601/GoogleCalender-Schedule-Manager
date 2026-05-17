@@ -9,8 +9,10 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 SCOPES = ['https://www.googleapis.com/auth/calendar']
-TOKEN_FILE = 'token.json'
-CLIENT_SECRETS_FILE = 'credentials.json'
+DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data')
+os.makedirs(DATA_DIR, exist_ok=True)
+TOKEN_FILE = os.path.join(DATA_DIR, 'token.json')
+CLIENT_SECRETS_FILE = os.path.join(DATA_DIR, 'credentials.json')
 
 def get_credentials():
     creds = None
