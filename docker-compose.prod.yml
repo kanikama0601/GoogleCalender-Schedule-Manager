@@ -7,8 +7,9 @@ services:
     volumes:
       # 認証用のJSONファイルだけはサーバーのローカルからマウント（保護）します
       - ./server/data:/app/data
-    env_file:
-      - ./server/.env
+    environment:
+      # HTTP環境でOAuthを動作させるための設定
+      - OAUTHLIB_INSECURE_TRANSPORT=1
     restart: always
 
   client:
