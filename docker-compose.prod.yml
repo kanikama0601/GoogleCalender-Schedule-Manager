@@ -1,0 +1,22 @@
+services:
+  server:
+    # GitHub Actionsでビルドされた最新のmainブランチイメージを自動でダウンロードします
+    image: ghcr.io/kanikama0601/googlecalender-schedule-manager-server:main
+    ports:
+      - "8000:8000"
+    volumes:
+      # 認証用のJSONファイルだけはサーバーのローカルからマウント（保護）します
+      - ./server/data:/app/data
+    env_file:
+      - ./server/.env
+    restart: always
+
+  client:
+    # Nginxに組み込まれた状態の完成品イメージをダウンロードします
+    image: ghcr.io/kanikama0601/googlecalender-schedule-manager-client:main
+    ports:
+      # Nginx経由で配信されるため、標準のHTTPポート（80）を開放します
+      - "80:80"
+    depends_on:
+      - server
+    restart: always
