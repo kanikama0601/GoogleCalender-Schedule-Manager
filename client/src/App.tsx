@@ -141,7 +141,8 @@ function App() {
           extendedProps: {
             description: event.description,
             isAllDay: event.isAllDay,
-            recurringEventId: event.recurringEventId
+            recurringEventId: event.recurringEventId,
+            recurrence: event.recurrence
           }
         }));
         setEvents(formattedEvents);
@@ -244,6 +245,12 @@ function App() {
       setShowRangeSelectionModal(false);
       setRangeSelectionAction(null);
     }
+  };
+
+  const handleCopyEvent = () => {
+    setEditingEventId(null);
+    setRecurringEventId(null);
+    setSummary(prev => prev.endsWith(' (Copy)') ? prev : `${prev} (Copy)`);
   };
 
   const handleDeleteClick = () => {
@@ -350,6 +357,71 @@ function App() {
     setIsFormOpen(true);
   };
 
+  const parseRecurrenceRule = (recurrenceList: string[]) => {
+    if (!recurrenceList || recurrenceList.length === 0) {
+      setIsRecurring(false);
+      return;
+    }
+    
+    const rruleStr = recurrenceList.find(r => r.startsWith('RRULE:'));
+    if (!rruleStr) {
+      setIsRecurring(false);
+      return;
+    }
+
+    const ruleParts = rruleStr.replace('RRULE:', '').split(';');
+    const rules: { [key: string]: string } = {};
+    ruleParts.forEach(part => {
+      const [key, val] = part.split('=');
+      if (key && val) {
+        rules[key] = val;
+      }
+    });
+
+    setIsRecurring(true);
+
+    if (rules['FREQ']) {
+      setRecurrenceFreq(rules['FREQ'] as any);
+    }
+
+    if (rules['BYDAY'] && rules['FREQ'] === 'WEEKLY') {
+      const days = rules['BYDAY'].split(',');
+      setRecurrenceWeekdays(days);
+    }
+
+    if (rules['FREQ'] === 'MONTHLY') {
+      if (rules['BYMONTHDAY']) {
+        setMonthlyRepeatType('DAY_OF_MONTH');
+        setRecurrenceMonthday(parseInt(rules['BYMONTHDAY']) || 1);
+      } else if (rules['BYDAY']) {
+        setMonthlyRepeatType('DAY_OF_WEEK');
+        const byDayVal = rules['BYDAY'];
+        const match = byDayVal.match(/^([-]?\d+)?([A-Z]{2})$/);
+        if (match) {
+          const weekNum = parseInt(match[1]) || 1;
+          const weekday = match[2];
+          setRecurrenceWeekNum(weekNum);
+          setRecurrenceMonthlyWeekday(weekday);
+        }
+      }
+    }
+
+    if (rules['COUNT']) {
+      setRecurrenceEndType('COUNT');
+      setRecurrenceCount(parseInt(rules['COUNT']) || 10);
+    } else if (rules['UNTIL']) {
+      setRecurrenceEndType('UNTIL');
+      const untilStr = rules['UNTIL'];
+      const datePart = untilStr.slice(0, 8);
+      const parsedDate = dayjs(datePart, 'YYYYMMDD');
+      if (parsedDate.isValid()) {
+        setRecurrenceUntil(parsedDate);
+      }
+    } else {
+      setRecurrenceEndType('NEVER');
+    }
+  };
+
   const handleEventClick = (clickInfo: any) => {
     const event = clickInfo.event;
     setEditingEventId(event.id);
@@ -379,7 +451,80 @@ function App() {
 
     setRecurringEventId(event.extendedProps.recurringEventId || null);
     
+    // 繰り返しルールのパースと復元
+    if (event.extendedProps.recurrence) {
+      parseRecurrenceRule(event.extendedProps.recurrence);
+    } else {
+      setIsRecurring(false);
+    }
+    
     setIsFormOpen(true);
+  };
+
+  const handleEventDrop = async (dropInfo: any) => {
+    const event = dropInfo.event;
+    const oldEvent = dropInfo.oldEvent;
+    
+    // 元の時間情報を抽出
+    const oldStart = dayjs(oldEvent.start);
+    const oldEnd = oldEvent.end ? dayjs(oldEvent.end) : oldStart.add(1, 'hour');
+    
+    // ドロップされた新しい日付情報を抽出
+    const newStart = dayjs(event.start);
+    
+    let finalStart: string;
+    let finalEnd: string;
+    
+    if (event.allDay) {
+      // 終日予定の場合は日付のみを維持
+      finalStart = newStart.format('YYYY-MM-DD');
+      
+      const dayDiff = newStart.startOf('day').diff(oldStart.startOf('day'), 'day');
+      const finalEndDay = oldEnd.add(dayDiff, 'day');
+      finalEnd = finalEndDay.format('YYYY-MM-DD');
+    } else {
+      // 終日予定でない場合は、新しい日付 ＋ 元の開始・終了時刻 を合成
+      const finalStartObj = newStart.hour(oldStart.hour()).minute(oldStart.minute()).second(0).millisecond(0);
+      
+      const dayDiff = newStart.startOf('day').diff(oldStart.startOf('day'), 'day');
+      const finalEndObj = oldEnd.hour(oldEnd.hour()).minute(oldEnd.minute()).second(0).millisecond(0).add(dayDiff, 'day');
+      
+      finalStart = finalStartObj.toISOString();
+      finalEnd = finalEndObj.toISOString();
+    }
+    
+    setLoading(true);
+    try {
+      // サーバーへ PUT /events/{id} を送信して位置を更新
+      // 繰り返し予定の場合、event.id にはインスタンスIDがすでに入っているため、自動的にその特定の日（インスタンス）のみが例外として移動します
+      const res = await fetch(`${API_URL}/events/${event.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          summary: event.title,
+          description: event.extendedProps.description || '',
+          start_time: finalStart,
+          end_time: finalEnd,
+          is_all_day: event.allDay,
+          recurrence: null // 繰り返し設定は null を渡すことで、この予定のみを移動させます
+        })
+      });
+      
+      if (res.ok) {
+        // 更新成功。イベント一覧を再同期
+        fetchEvents();
+      } else {
+        const data = await res.json();
+        alert(data.detail || 'Failed to move event');
+        dropInfo.revert(); // ドラッグ前の位置に戻す
+      }
+    } catch (err) {
+      console.error('Failed to move event', err);
+      alert('Failed to move event due to a network error');
+      dropInfo.revert(); // ドラッグ前の位置に戻す
+    } finally {
+      setLoading(false);
+    }
   };
 
   if (!isAuthenticated) {
@@ -426,6 +571,8 @@ function App() {
               dayMaxEvents={true}
               select={handleDateSelect}
               eventClick={handleEventClick}
+              editable={true}
+              eventDrop={handleEventDrop}
               height="100%"
               eventTimeFormat={{
                 hour: '2-digit',
@@ -535,7 +682,7 @@ function App() {
                                   checked={monthlyRepeatType === 'DAY_OF_MONTH'} 
                                   onChange={() => setMonthlyRepeatType('DAY_OF_MONTH')} 
                                 />
-                                毎月 {recurrenceMonthday} 日
+                                <span>毎月 {recurrenceMonthday} 日</span>
                               </label>
                               <label className="radio-label">
                                 <input 
@@ -544,7 +691,7 @@ function App() {
                                   checked={monthlyRepeatType === 'DAY_OF_WEEK'} 
                                   onChange={() => setMonthlyRepeatType('DAY_OF_WEEK')} 
                                 />
-                                第{recurrenceWeekNum === -1 ? '最終' : recurrenceWeekNum} {getWeekdayJapanese(recurrenceMonthlyWeekday)}
+                                <span>第{recurrenceWeekNum === -1 ? '最終' : recurrenceWeekNum} {getWeekdayJapanese(recurrenceMonthlyWeekday)}</span>
                               </label>
                             </div>
                           </div>
@@ -682,9 +829,17 @@ function App() {
                 />
                 <div className="modal-footer">
                   {editingEventId && (
-                    <button type="button" className="delete-btn" onClick={handleDeleteClick} disabled={loading}>
-                      Delete
-                    </button>
+                    <div className="footer-left-buttons">
+                      <button type="button" className="delete-btn" onClick={handleDeleteClick} disabled={loading} title="Delete">
+                        Delete
+                      </button>
+                      <button type="button" className="copy-btn" onClick={handleCopyEvent} title="Copy event to new">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                          <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                        </svg>
+                      </button>
+                    </div>
                   )}
                   <div className="footer-right">
                     <button type="button" className="cancel-btn" onClick={resetForm}>Cancel</button>
