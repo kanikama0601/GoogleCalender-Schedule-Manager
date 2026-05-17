@@ -57,8 +57,3 @@ jobs:
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          # Clientビルド時にGitHub環境変数 (VITE_API_URL) を埋め込みます
-          # build-args: |
-          #   VITE_API_URL=${{ vars.VITE_API_URL }}
-          build-args: |
-            VITE_API_URL=http://192.168.100.3:8000
