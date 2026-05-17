@@ -40,6 +40,41 @@ podman-compose up --build
 
 ---
 
+## 🛠️ ローカルでの開発起動 (Local Development without Docker)
+
+Docker を使用せず、手元のローカル環境で直接バックエンドとフロントエンドを起動して開発する場合は、パッケージマネージャーとして **uv** (Python) および **npm/yarn/bun** (Node.js) を使用します。
+
+### 1. バックエンド (FastAPI) の起動
+1. `server` ディレクトリに移動します:
+   ```bash
+   cd server
+   ```
+2. **uv** を使って仮想環境を作成し、全ての依存関係を同期します:
+   ```bash
+   uv sync
+   ```
+3. 開発用サーバーを起動します (ホットリロード有効):
+   ```bash
+   uv run uvicorn main:app --reload --port 8000
+   ```
+
+### 2. フロントエンド (React + Vite) の起動
+1. `client` ディレクトリに移動します:
+   ```bash
+   cd client
+   ```
+2. 依存関係をインストールします:
+   ```bash
+   npm install
+   ```
+3. 開発用サーバーを起動します:
+   ```bash
+   npm run dev
+   ```
+4. ブラウザで `http://localhost:5173` にアクセスします。
+
+---
+
 ## ✨ 機能紹介 (Features)
 
 モダンで快適な操作性を追求し、数多くの高度なスケジュール管理機能を搭載しています。
