@@ -7,7 +7,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional
-from auth import get_auth_url, save_token_from_code, get_credentials, CLIENT_SECRETS_FILE
+from auth import get_credentials, SERVICE_ACCOUNT_FILE
 from calendar_service import get_calendar_events, create_calendar_event, update_calendar_event, delete_calendar_event
 
 app = FastAPI()
@@ -30,18 +30,11 @@ class Event(BaseModel):
 
 @app.get("/auth/url")
 def auth_url(redirect_uri: str):
-    if not os.path.exists(CLIENT_SECRETS_FILE):
-        raise HTTPException(status_code=400, detail="credentials.json not found. Please provide it in the server/data directory.")
-    url, code_verifier = get_auth_url(redirect_uri)
-    return {"url": url, "code_verifier": code_verifier}
+    raise HTTPException(status_code=400, detail="Service account authentication is used.")
 
 @app.get("/auth/callback")
 def auth_callback(code: str, redirect_uri: str, code_verifier: Optional[str] = None):
-    try:
-        save_token_from_code(code, redirect_uri, code_verifier)
-        return {"status": "success"}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    raise HTTPException(status_code=400, detail="Service account authentication is used.")
 
 @app.get("/auth/status")
 def auth_status():
