@@ -1,0 +1,59 @@
+name: Build and Publish Docker Images
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    # パッケージを書き込むための権限
+    permissions:
+      contents: read
+      packages: write
+    
+    # マトリックス戦略を使って server と client の2つのコンテナを並列ビルドします
+    strategy:
+      matrix:
+        component: [server, client]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Convert Repository Name to Lowercase
+        id: string
+        run: |
+          # Dockerのイメージ名は小文字である必要があるため小文字に変換
+          REPO="${{ github.repository_owner }}/googlecalender-schedule-manager-${{ matrix.component }}"
+          echo "image=${REPO,,}" >> $GITHUB_OUTPUT
+
+      - name: Log in to the Container registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata (tags, labels)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ steps.string.outputs.image }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./${{ matrix.component }}
+          # pull_request時はビルドテストのみ（プッシュしない）
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
